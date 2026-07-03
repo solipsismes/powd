@@ -1,0 +1,49 @@
+# powd example configuration
+#
+# The format is a flat subset of TOML: key = value, where a value is a
+# quoted string, an integer, a boolean, or an array of quoted strings.
+# Unknown keys are a startup error.
+
+# Address powd listens on (nginx proxies protected locations here).
+listen = ":8081"
+
+# Application server that verified requests are proxied to.
+upstream = "http://127.0.0.1:8080"
+
+# Proof-of-work difficulty in leading zero bits. Each +1 doubles the
+# expected client work. 18 targets roughly 0.5-3 s in a browser.
+difficulty = 18
+
+# How long an issued cookie stays valid.
+cookie_age = "24h"
+
+# How long a client has to solve a challenge.
+challenge_age = "2m"
+
+# Persistent HMAC secret (created with mode 0600 if missing). If unset,
+# powd generates an ephemeral secret at boot and a restart re-challenges
+# every client.
+#secret_file = "/var/lib/powd/secret"
+
+# Bind cookies to the User-Agent header.
+bind_ua = true
+
+# Bind cookies to the client's IP prefix (/24 for IPv4, /64 for IPv6).
+# Off by default: mobile clients change networks frequently.
+bind_ip = false
+
+# Omit the Secure cookie attribute. Only for plain-HTTP local testing.
+insecure_cookie = false
+
+# Path prefixes that require proof of work (first match wins).
+protect = [
+    "/",
+]
+
+# Path prefixes exempt from protection (checked before protect).
+exclude = [
+    "/rss",
+    "/robots.txt",
+    "/favicon.ico",
+    "/healthz",
+]
