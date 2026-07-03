@@ -100,6 +100,16 @@ func TestDefaults(t *testing.T) {
 	}
 }
 
+func TestPathsAreNormalized(t *testing.T) {
+	cfg, err := config.Parse(minimal + "protect = [\"/blog/\", \"/a/./b\"]\n")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if want := []string{"/blog", "/a/b"}; !reflect.DeepEqual(cfg.Protect, want) {
+		t.Errorf("Protect = %v, want %v", cfg.Protect, want)
+	}
+}
+
 func TestEmptyArrayOverridesDefault(t *testing.T) {
 	cfg, err := config.Parse(minimal + "protect = []\n")
 	if err != nil {

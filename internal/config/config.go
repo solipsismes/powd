@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -103,15 +104,19 @@ func (c *Config) validate() error {
 	if c.ChallengeAge <= 0 {
 		return fmt.Errorf("challenge_age must be positive")
 	}
-	for _, p := range c.Protect {
+	// Entries are normalized ("/blog/" → "/blog") so that segment-aware
+	// prefix matching can assume clean paths.
+	for i, p := range c.Protect {
 		if !strings.HasPrefix(p, "/") {
 			return fmt.Errorf("protect: path %q must start with '/'", p)
 		}
+		c.Protect[i] = path.Clean(p)
 	}
-	for _, p := range c.Exclude {
+	for i, p := range c.Exclude {
 		if !strings.HasPrefix(p, "/") {
 			return fmt.Errorf("exclude: path %q must start with '/'", p)
 		}
+		c.Exclude[i] = path.Clean(p)
 	}
 	return nil
 }

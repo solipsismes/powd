@@ -8,11 +8,19 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"powd/internal/config"
+	"powd/internal/server"
+	"powd/internal/token"
 )
 
 // version is stamped by the Makefile via -ldflags.
@@ -39,8 +47,44 @@ func main() {
 		return
 	}
 
-	// The server is built in a later step of the implementation plan.
-	_ = cfg
-	fmt.Fprintln(os.Stderr, "powd: server not implemented yet")
-	os.Exit(1)
+	logger := log.New(os.Stderr, "powd: ", log.LstdFlags)
+
+	var secret []byte
+	if cfg.SecretFile != "" {
+		secret, err = token.LoadSecret(cfg.SecretFile)
+		if err != nil {
+			logger.Fatal(err)
+		}
+	} else {
+		secret = token.RandomSecret()
+		logger.Print("no secret_file configured; using an ephemeral secret (a restart re-challenges all clients)")
+	}
+	signer, err := token.New(secret)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
+	srv := &http.Server{
+		Addr:              cfg.Listen,
+		Handler:           server.New(cfg, signer, logger),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	errc := make(chan error, 1)
+	go func() { errc <- srv.ListenAndServe() }()
+	logger.Printf("%s listening on %s, proxying to %s", version, cfg.Listen, cfg.Upstream)
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	select {
+	case err := <-errc:
+		logger.Fatal(err)
+	case s := <-sig:
+		logger.Printf("received %s, shutting down", s)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			logger.Printf("shutdown: %v", err)
+		}
+	}
 }
