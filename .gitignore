@@ -1,2 +1,7 @@
 # Build output
 /powd
+
+# Browser e2e harness (see e2e/README.md)
+/e2e/node_modules/
+/e2e/package-lock.json
+/e2e/*.png
