@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
-	"powd/internal/config"
-	"powd/internal/replay"
-	"powd/internal/token"
+	"github.com/solipsismes/powd/internal/config"
+	"github.com/solipsismes/powd/internal/replay"
+	"github.com/solipsismes/powd/internal/token"
 )
 
 const (

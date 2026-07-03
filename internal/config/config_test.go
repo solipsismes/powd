@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"powd/internal/config"
+	"github.com/solipsismes/powd/internal/config"
 )
 
 // minimal is the smallest valid configuration.

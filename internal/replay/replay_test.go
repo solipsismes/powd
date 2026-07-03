@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"powd/internal/replay"
+	"github.com/solipsismes/powd/internal/replay"
 )
 
 var (

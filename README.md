@@ -163,3 +163,7 @@ end to end and screenshots the interstitial — see
 The architecture, wire formats, and the reasoning behind each decision
 live in [DESIGN.md](DESIGN.md). The original project specification is
 preserved as [docs/SPEC.md](docs/SPEC.md).
+
+## License
+
+[MIT](LICENSE)

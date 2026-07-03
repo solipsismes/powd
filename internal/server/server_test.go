@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"powd/internal/config"
-	"powd/internal/pow"
-	"powd/internal/server"
-	"powd/internal/token"
+	"github.com/solipsismes/powd/internal/config"
+	"github.com/solipsismes/powd/internal/pow"
+	"github.com/solipsismes/powd/internal/server"
+	"github.com/solipsismes/powd/internal/token"
 )
 
 const (

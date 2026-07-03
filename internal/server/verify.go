@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"powd/internal/pow"
+	"github.com/solipsismes/powd/internal/pow"
 )
 
 // verifyPath is the one endpoint powd serves itself.

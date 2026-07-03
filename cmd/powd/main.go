@@ -18,9 +18,9 @@ import (
 	"syscall"
 	"time"
 
-	"powd/internal/config"
-	"powd/internal/server"
-	"powd/internal/token"
+	"github.com/solipsismes/powd/internal/config"
+	"github.com/solipsismes/powd/internal/server"
+	"github.com/solipsismes/powd/internal/token"
 )
 
 // version is stamped by the Makefile via -ldflags.

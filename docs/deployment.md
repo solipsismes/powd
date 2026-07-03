@@ -71,7 +71,7 @@ exclude = ["/rss", "/robots.txt", "/favicon.ico", "/healthz"]
 ```ini
 [Unit]
 Description=powd proof-of-work gateway
-Documentation=https://github.com/you/powd
+Documentation=https://github.com/solipsismes/powd
 After=network.target
 
 [Service]
