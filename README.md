@@ -1,490 +1,165 @@
-# Project: `powd` — A Minimal Unix Proof-of-Work Gateway
-
 # powd
 
-powd is a tiny reverse proxy implementing Hashcash-inspired proof-of-work to protect websites from mass scraping.
-Its goal is not to detect humans.
-Its goal is to make abusive automation computationally expensive while remaining lightweight, auditable, privacy-respecting and easy to self-host.
-The project intentionally follows the Unix philosophy: do one thing, do it well.
-
-## Vision
-
-I want to build an open-source project called **powd** ("Proof-of-Work daemon"), a small reverse proxy that protects websites from large-scale automated scraping using a lightweight, Hashcash-inspired proof-of-work challenge.
-
-The philosophy is **not** to compete with Cloudflare or Anubis feature-for-feature. Instead, I want something that follows the Unix philosophy:
-
-- one program
-- one responsibility
-- tiny codebase
-- easy to audit
-- easy to self-host
-- very few dependencies
-- understandable by a single developer in an afternoon
-
-Think of it as what `lighttpd` is to Apache, or `doas` is to `sudo`: a deliberately minimal implementation that solves one problem elegantly.
-
----
-
-# Inspiration
-
-The project is heavily inspired by:
-
-- Hashcash
-- Anubis
-- traditional Unix daemons
-- reverse proxies
-- the idea that websites should remain self-hostable without relying on Cloudflare
-
-However, I do **not** want to clone Anubis.
-
-Instead I want to build a cleaner, smaller implementation with fewer moving parts.
-
----
-
-# Name
-
-The daemon is called:
+**P**roof **o**f **w**ork **d**aemon — a tiny reverse proxy that protects
+websites from mass scraping by asking each new visitor's browser for a
+small, one-time Hashcash-style computation.
 
 ```
-powd
+Internet → nginx → powd → application
 ```
 
-meaning:
+A human visits once, watches a progress bar for about a second, gets a
+signed cookie, and never sees the check again until it expires. A scraper
+that wants a million pages under a million identities has to pay for a
+million proofs of work. That asymmetry — negligible for people, expensive
+at scale — is the entire idea.
 
-```
-Proof Of Work Daemon
-```
+powd does not try to detect humans. There is no fingerprinting, no
+behavioural analysis, no telemetry, and nothing about the visitor is
+collected or stored. It does one thing: it makes abusive automation cost
+something.
 
-Like:
+## Properties
 
-```
-sshd
-httpd
-crond
-```
+- **One binary, zero dependencies.** Pure Go standard library. 1,141
+  lines of Go plus a 179-line challenge page; auditable in an afternoon.
+- **Stateless.** Challenges and cookies are self-authenticating HMAC
+  tokens. No database, no Redis, no sessions, no user accounts. The only
+  state is a small bounded in-memory replay cache.
+- **Cheap to run.** Issuing a challenge is one HMAC; verifying a cookie is
+  two hashes (~100 ns). Only the client pays for solving.
+- **Private by design.** The cookie contains an expiry, an optional
+  truncated binding hash, and a MAC — nothing identifying, nothing
+  recoverable.
+- **Boring on purpose.** It behaves like a classic Unix daemon: a config
+  file, a `-t` config check, logs to stderr, graceful shutdown on SIGTERM.
 
-It should feel like a classic Unix service.
+## How it works
 
----
+1. A request without a valid cookie on a protected path gets a `403` with
+   a small self-contained challenge page (~7 KB, no external resources).
+2. The page's JavaScript searches, in parallel Web Workers, for a counter
+   such that `SHA256(challenge + "." + counter)` starts with `difficulty`
+   leading zero bits, using the browser's own WebCrypto SHA-256.
+3. It POSTs the counter to `/.powd/verify`, receives a signed `HttpOnly`
+   cookie, and reloads the page it is already on — no redirects.
+4. Every later request carries the cookie and is proxied straight through.
 
-# Overall architecture
+Challenges expire in minutes and can be redeemed exactly once; cookies
+last `cookie_age` and are optionally bound to the User-Agent and/or a
+coarse IP prefix. Formats, threat model, and every design decision are
+documented in [DESIGN.md](DESIGN.md).
 
-```
-Internet
-        │
-        ▼
-     nginx
-        │
-        ▼
-      powd
-        │
-        ▼
-application
-```
+## Build
 
-Nginx proxies protected locations through `powd`.
+Go ≥ 1.22, no other requirements:
 
-If the client already has a valid cookie:
-
-```
-pass request through
-```
-
-Otherwise:
-
-```
-show PoW page
-```
-
-Once solved:
-
-```
-issue signed cookie
-redirect back
+```sh
+make build        # or: go build ./cmd/powd
 ```
 
-No sessions should be required.
+## Quick start
 
----
-
-# Philosophy
-
-The implementation should value:
-
-- simplicity
-- auditability
-- readability
-- small codebase
-- deterministic behaviour
-- privacy
-
-over:
-
-- endless anti-bot heuristics
-- browser fingerprinting
-- ML detection
-- telemetry
-
-The project should feel "boringly correct."
-
----
-
-# Things I specifically DO NOT want
-
-No:
-
-- canvas fingerprinting
-- font fingerprinting
-- audio fingerprinting
-- WebGL fingerprinting
-- battery API
-- mouse movement analysis
-- behavioural AI detection
-- telemetry
-- analytics
-
-I want to rely almost entirely on proof-of-work.
-
----
-
-# Challenge flow
-
-A client requests:
-
-```
-GET /
+```sh
+cp powd.toml.example powd.toml   # edit listen/upstream to taste
+./powd -t -c powd.toml           # validate the configuration
+./powd -c powd.toml
 ```
 
-If there is no valid cookie:
+Visit a protected path in a browser: you get the interstitial once, then
+straight-through proxying. See [docs/deployment.md](docs/deployment.md)
+for the nginx and systemd setup.
 
-Server responds with a small HTML page containing:
+## Configuration
 
-- nonce
-- expiry
-- difficulty
-- JavaScript solver
+A flat TOML subset: strings, integers, booleans, and string arrays.
+Unknown or duplicate keys are a startup error — a typo fails at boot
+rather than silently running with a default.
 
-The browser computes:
+| Key               | Default | Meaning                                                        |
+|-------------------|---------|----------------------------------------------------------------|
+| `listen`          | —       | address powd listens on, e.g. `":8081"` (required)             |
+| `upstream`        | —       | application URL requests are proxied to (required)             |
+| `difficulty`      | `18`    | required leading zero bits; each +1 doubles client work        |
+| `cookie_age`      | `"24h"` | how long an issued cookie stays valid                          |
+| `challenge_age`   | `"2m"`  | how long a client has to solve a challenge                     |
+| `secret_file`     | unset   | path to the persistent HMAC secret; ephemeral if unset         |
+| `bind_ua`         | `true`  | bind cookies to the User-Agent header                          |
+| `bind_ip`         | `false` | bind cookies to the client's /24 (IPv4) or /64 (IPv6)          |
+| `insecure_cookie` | `false` | omit the cookie's `Secure` attribute (plain-HTTP testing only) |
+| `protect`         | `["/"]` | path prefixes requiring proof of work                          |
+| `exclude`         | `[]`    | path prefixes exempt from protection (checked first)           |
 
-```
-SHA256(nonce + solution)
-```
+Prefixes are segment-aware: `"/blog"` covers `/blog` and `/blog/…` but
+not `/blogroll`. Feeds, `robots.txt`, and health checks belong in
+`exclude` so machines that should read your site still can.
 
-until:
+## Choosing a difficulty
 
-```
-hash begins with N zero bits
-```
+Expected work is `2^difficulty` hashes. Measured with the WebCrypto
+solver in Chromium on ordinary desktop hardware:
 
-Then POSTs:
+| Bits | Expected hashes | Rough solve time     |
+|------|-----------------|----------------------|
+| 14   | 16 k            | imperceptible        |
+| 16   | 65 k            | ~0.3–0.8 s (measured)|
+| 18   | 262 k           | ~1–3 s (default)     |
+| 20   | 1 M             | ~4–12 s              |
+| 22   | 4.2 M           | ~15–60 s — hostile to humans on slow devices |
 
-```
-nonce
-solution
-```
+Phones run roughly 2–4× slower than desktops. When in doubt, stay at the
+default and raise it only under active scraping pressure.
 
-Server verifies instantly.
+## Security model
 
-If valid:
+powd defends against forged and tampered tokens (HMAC-SHA256 with
+domain separation), expired tokens, challenge replay (a solved challenge
+redeems exactly once), and path-traversal bypasses of the protect list.
+Verification failures are uniform 403s that reveal nothing.
 
-Issue signed cookie.
+Be equally clear about what it does not do: a determined adversary with
+GPUs can solve challenges cheaply — Hashcash's known limit. powd raises
+the *cost* of scraping at scale; it is not an access-control system, and
+a cookie is a bearer token like any session cookie. If a page must not be
+scraped at all, put authentication in front of it.
 
-Redirect to original URL.
+Operational notes:
 
----
+- Without `secret_file`, the secret is random per process: a restart
+  invalidates all cookies and every client re-solves once. Set
+  `secret_file` for restart-proof cookies or multiple instances.
+- The secret file is created with mode `0600`; powd refuses malformed
+  secret files at boot.
+- powd trusts `X-Real-IP` because it is deployed behind your own nginx —
+  never expose it directly to the internet with `bind_ip` enabled.
 
-# Stateless design
+## Operations
 
-I would strongly prefer a stateless design.
-
-Instead of storing issued challenges in Redis or a database, generate self-authenticating challenge tokens.
-
-For example:
-
-```
-challenge =
-HMAC(secret,
-     expiry ||
-     difficulty ||
-     random)
-```
-
-The server should be able to validate challenges without server-side storage whenever practical.
-
-Likewise, authentication cookies should be signed rather than stored.
-
-For example, a cookie may encode:
-
-- expiry
-- user agent hash (optional)
-- coarse IP prefix (optional)
-- HMAC signature
-
-The exact format is up to you.
-
----
-
-# Cookie flow
-
-Simple.
-
-```
-No cookie?
-
-↓
-
-Challenge
-
-↓
-
-Solve PoW
-
-↓
-
-Receive signed cookie
-
-↓
-
-Cookie valid for configurable duration
+```sh
+powd -c /etc/powd.toml     # run
+powd -t -c /etc/powd.toml  # validate config and exit
+powd -v                    # version
 ```
 
-No user accounts.
+Logs go to stderr: one line at startup, proxy errors, nothing per
+request. `SIGTERM`/`SIGINT` trigger a graceful drain. There is no config
+reload; restart instead (with `secret_file` set, restarts are invisible
+to clients).
 
-No database.
+## Development
 
----
-
-# Challenge page
-
-I want the HTML to be tiny.
-
-No frameworks.
-
-No React.
-
-No Vue.
-
-No Tailwind.
-
-Just plain HTML.
-
-Example:
-
-```
-Computing proof of work...
-
-██████████████
+```sh
+make test    # unit + integration tests (go test ./...)
+make vet
 ```
 
-Small amount of JavaScript.
-
-Minimal CSS.
-
-Fast loading.
-
----
-
-# JavaScript
-
-JavaScript is acceptable.
-
-Like Anubis, I am fine with requiring JavaScript.
-
-Supporting no-JS browsers is **not** a goal.
-
-However, I would like the JavaScript to be:
-
-- modern
-- dependency-free
-- clean
-- readable
-
-Possibly with an optional WebAssembly backend later.
-
----
-
-# Proof-of-work algorithm
-
-Initially:
-
-```
-SHA-256
-```
-
-Hashcash-style.
-
-Find a value satisfying:
-
-```
-SHA256(nonce + counter)
-```
-
-with configurable leading-zero difficulty.
-
-Keep it simple.
-
----
-
-# Future possibility
-
-Later I may want to experiment with:
-
-- Argon2
-- memory-hard puzzles
-- hybrid CPU + memory cost
-
-But **not initially**.
-
----
-
-# Adaptive difficulty
-
-This is one area where I think the design can improve over a fixed difficulty.
-
-Instead of:
-
-```
-difficulty = 22
-```
-
-I would like the server to target approximately the same wall-clock solve time on different hardware.
-
-For example:
-
-Desktop:
-~100 ms
-
-Phone:
-~250 ms
-
-Old laptop:
-~300 ms
-
-Fast workstation:
-~80 ms
-
-The implementation must **not trust client claims** about performance.
-
-If adaptive difficulty is implemented, it should derive future adjustments from observed solve times or other server-verifiable information, not arbitrary values reported by the browser.
-
-If this complicates the initial implementation too much, start with a fixed difficulty and make adaptive difficulty an optional future feature.
-
----
-
-# Configuration
-
-I imagine something as simple as:
-
-```toml
-listen = ":8081"
-
-cookie_age = "24h"
-
-difficulty = 22
-
-protect = [
-    "/",
-    "/blog",
-    "/forum"
-]
-
-exclude = [
-    "/rss",
-    "/robots.txt",
-    "/favicon.ico",
-    "/healthz"
-]
-```
-
-Minimal configuration.
-
-Easy to understand.
-
----
-
-# Deployment
-
-Typical deployment:
-
-```
-nginx
-↓
-
-proxy_pass
-
-↓
-
-powd
-
-↓
-
-application
-```
-
-It should be trivial to drop into an existing server.
-
----
-
-# Performance goals
-
-The daemon itself should consume almost no resources.
-
-Verification should be extremely cheap.
-
-Only the client should pay the computational cost.
-
----
-
-# Security goals
-
-Protect against:
-
-- replay attacks
-- expired challenges
-- tampered cookies
-- forged challenges
-
-without introducing excessive complexity.
-
----
-
-# Code quality
-
-Please write production-quality code.
-
-Priorities:
-
-1. readability
-2. correctness
-3. simplicity
-
-before optimization.
-
-Prefer small, well-documented modules.
-
-Avoid unnecessary abstractions.
-
----
-
-# Deliverables
-
-Please design and implement:
-
-- project architecture
-- directory structure
-- HTTP protocol
-- challenge format
-- cookie format
-- configuration parser
-- proof-of-work engine
-- JavaScript client
-- verification logic
-- reverse-proxy integration
-- build system
-- documentation
-
-Explain every important design decision.
-
-Where several approaches are possible, choose the one that best matches the Unix philosophy and explain why.
-
-The end result should feel like a small, elegant Unix daemon rather than a large anti-bot platform.
+The Go suite covers the full lifecycle, including solving real
+challenges. A separate Playwright harness drives the actual browser flow
+end to end and screenshots the interstitial — see
+[e2e/README.md](e2e/README.md).
+
+## Design
+
+The architecture, wire formats, and the reasoning behind each decision
+live in [DESIGN.md](DESIGN.md). The original project specification is
+preserved as [docs/SPEC.md](docs/SPEC.md).

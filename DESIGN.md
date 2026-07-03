@@ -78,10 +78,12 @@ powd/
 │   └── server/
 │       ├── server.go         # the decision ladder + reverse proxy
 │       ├── verify.go         # POST /.powd/verify handler
-│       ├── page.html         # challenge page (go:embed)
-│       └── solve.js          # solver, inlined into page.html at build of the page
+│       └── page.html         # challenge page with inlined solver (go:embed)
+├── e2e/                      # Playwright browser harness (dev-only, not a build dep)
 ├── powd.toml.example
-├── docs/nginx.md             # copy-paste nginx snippet
+├── docs/
+│   ├── deployment.md         # nginx + systemd setup
+│   └── SPEC.md               # the original project specification
 ├── Makefile                  # build / test / lint, nothing clever
 ├── DESIGN.md
 └── README.md
@@ -433,7 +435,7 @@ first, I/O last.
 7. Challenge page + solver JS; manual browser test against a toy upstream.
 8. End-to-end test: toy upstream + powd + scripted client, full cookie
    lifecycle.
-9. `powd.toml.example`, nginx snippet in `docs/nginx.md`, user-facing
-   README sections (install, deploy, security notes).
+9. `powd.toml.example`, deployment guide in `docs/deployment.md`,
+   user-facing README (install, deploy, security notes).
 
 Each step is one commit (or a few); the repo is green at every commit.
